@@ -1,3 +1,7 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,6 +11,8 @@ builder.Services.AddControllersWithViews()
     .AddJsonOptions(configure => 
         configure.JsonSerializerOptions.PropertyNamingPolicy = null);
 
+JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
+
 // create an HttpClient used for accessing the API
 builder.Services.AddHttpClient("APIClient", client =>
 {
@@ -14,6 +20,45 @@ builder.Services.AddHttpClient("APIClient", client =>
     client.DefaultRequestHeaders.Clear();
     client.DefaultRequestHeaders.Add(HeaderNames.Accept, "application/json");
 });
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+}).AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+{
+    options.AccessDeniedPath = "/Authentication/AccessDenied";
+})
+.AddOpenIdConnect(OpenIdConnectDefaults.AuthenticationScheme, options =>
+{
+    options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.Authority = "https://localhost:5001/";
+    options.ClientId = "imagegalleryclient";
+    options.ClientSecret = "secret";
+    options.ResponseType = "code";
+    //options.Scope.Add("openid"); //these options Scopes are defaulted and automaitically retreieved/requested by the middleware
+    //options.Scope.Add("profile"); //these options Scopes are defaulted and automaitically retreieved/requested by the middleware
+    //options.CallbackPath = new PathString("signin-oidc"); // 2signin-oidc" is default value for the middleware endpoint uncommment and change path stiring to have diffenrnt endpoint for signin
+    //options.SignedOutCallbackPath: default = Host:port/signout-callback-oidc .
+    // must match wit hte post logout redirect URI at the IDP client config if 
+    //you wan to automaitcally return to the application after logging out of IdentiyServer.
+    //To Change, Set SignedOutCallbackPath
+    //eg: SignedOutCallbackPath = "pathaftersignout"
+    options.SaveTokens = true;
+    options.GetClaimsFromUserInfoEndpoint = true;
+    options.ClaimActions.Remove("aud");
+    options.ClaimActions.DeleteClaim("sid");
+    options.ClaimActions.DeleteClaim("idp");
+    options.ClaimActions.MapJsonKey("role", "role");
+    options.Scope.Add("roles");
+    options.TokenValidationParameters = new()
+    {
+        NameClaimType = "given_name",
+        RoleClaimType = "role"
+    };
+});
+
+
 
 var app = builder.Build();
 
@@ -28,7 +73,7 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
-
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllerRoute(
